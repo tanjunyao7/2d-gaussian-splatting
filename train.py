@@ -67,15 +67,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
         
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        image, viewspace_point_tensor, visibility_filter, radii,surf_depth = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"], render_pkg['surf_depth'].squeeze(0)
         
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
         
         # regularization
+        # lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
+        # lambda_dist = opt.lambda_dist if iteration > 3000 else 0.0
+        lambda_dist = 1.0
         lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
-        lambda_dist = opt.lambda_dist if iteration > 3000 else 0.0
 
         rend_dist = render_pkg["rend_dist"]
         rend_normal  = render_pkg['rend_normal']
@@ -86,6 +88,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # loss
         total_loss = loss + dist_loss + normal_loss
+
+        if viewpoint_cam.gt_depth is not None:
+            depth_loss = l1_loss(surf_depth[viewpoint_cam.gt_depth_mask],viewpoint_cam.gt_depth[viewpoint_cam.gt_depth_mask])
+            total_loss += 0.1*depth_loss
+
         
         total_loss.backward()
 
